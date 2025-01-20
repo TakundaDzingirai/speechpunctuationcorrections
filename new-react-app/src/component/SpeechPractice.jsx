@@ -3,16 +3,20 @@ import axios from 'axios';
 
 const SpeechPractice = () => {
     const [isRecording, setIsRecording] = useState(false);
-    const [transcript, setTranscript] = useState('');
+
+    // Keep final (punctuated) transcript separate from interim text
+    const [finalTranscript, setFinalTranscript] = useState('');
+    const [interimTranscript, setInterimTranscript] = useState('');
+
     const [feedback, setFeedback] = useState(null);
 
     // SpeechRecognition instance
     const recognitionRef = useRef(null);
 
     // Track pauses/duration
-    const timeoutRef = useRef(null);            // for the pause timeout
-    const lastWordTimeRef = useRef(new Date()); // track time of last recognized word
-    const pauseTimeRef = useRef(0);             // accumulate total paused time (optional)
+    const timeoutRef = useRef(null);
+    const lastWordTimeRef = useRef(new Date());
+    const pauseTimeRef = useRef(0);
 
     useEffect(() => {
         // Check if the browser supports the Web Speech API
@@ -30,40 +34,48 @@ const SpeechPractice = () => {
 
         // On speech result:
         recognition.onresult = (event) => {
-            const lastResult = event.results[event.results.length - 1];
-            // Rename the local variable to avoid clashing with state variable `transcript`
-            const recognizedText = lastResult[0].transcript.trim();
+            // We'll collect any interim text separately
+            let tempInterim = '';
 
-            if (lastResult.isFinal) {
-                // Clear any pending punctuation timeout
-                clearTimeout(timeoutRef.current);
+            // Process *all* results that have come in since last time
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                const result = event.results[i];
+                const recognizedText = result[0].transcript.trim();
 
-                const now = new Date();
-                const timeDiff = (now - lastWordTimeRef.current) / 1000;
+                if (result.isFinal) {
+                    // Clear any pending punctuation timeout
+                    clearTimeout(timeoutRef.current);
 
-                // Simple punctuation based on pause length
-                const punctuation = timeDiff > 1.5
-                    ? "."
-                    : timeDiff > 0.8
-                        ? ","
-                        : "";
+                    // Insert punctuation based on the gap since last final word
+                    const now = new Date();
+                    const timeDiff = (now - lastWordTimeRef.current) / 1000;
+                    const punctuation = timeDiff > 1.5 ? "." : timeDiff > 0.8 ? "," : "";
 
-                // Append the recognized text with punctuation
-                setTranscript((prev) => `${prev.trim()}${punctuation} ${recognizedText}`);
-                lastWordTimeRef.current = now;
+                    // Update final transcript with punctuation + recognized text
+                    setFinalTranscript((prev) => {
+                        return `${prev.trim()}${punctuation} ${recognizedText}`;
+                    });
+
+                    // Reset the timer reference
+                    lastWordTimeRef.current = now;
+                } else {
+                    // For non-final (interim) results, accumulate them
+                    tempInterim += recognizedText + ' ';
+                }
             }
 
+            // Update the interim transcript state so user sees partial text
+            setInterimTranscript(tempInterim);
+
             // Handle punctuation on a timeout if user goes silent for 1.5s
+            // This is optional: you might only do punctuation on final results
             timeoutRef.current = setTimeout(() => {
                 const now = new Date();
                 const timeDiff = (now - lastWordTimeRef.current) / 1000;
-
                 if (timeDiff > 1.5) {
-                    // Track pause time
                     pauseTimeRef.current += timeDiff;
-
                     // Insert a period to mark a longer pause
-                    setTranscript((prev) => `${prev.trim()}. `);
+                    setFinalTranscript((prev) => `${prev.trim()}. `);
                     lastWordTimeRef.current = now;
                 }
             }, 1500);
@@ -79,15 +91,15 @@ const SpeechPractice = () => {
     const handleStart = () => {
         if (!recognitionRef.current) return;
 
-        // Reset transcript and feedback
-        setTranscript('');
+        // Reset transcripts and feedback
+        setFinalTranscript('');
+        setInterimTranscript('');
         setFeedback(null);
 
-        // Optionally reset pauseTime and lastWordTime here
+        // Optionally reset pauseTime and lastWordTime
         pauseTimeRef.current = 0;
         lastWordTimeRef.current = new Date();
 
-        // Start recognition
         recognitionRef.current.start();
         setIsRecording(true);
     };
@@ -99,25 +111,27 @@ const SpeechPractice = () => {
     };
 
     const handleSendFeedbackRequest = async () => {
-        if (!transcript.trim()) return;
+        // Combine final + interim transcripts if you want to send everything
+        const combinedTranscript = (finalTranscript + ' ' + interimTranscript).trim();
+        if (!combinedTranscript) return;
 
         try {
-            // Example call to a punctuation feedback endpoint
-            const res = await axios.post(
-                "http://localhost:5000/api/punctuate/feedback",
-                {
-                    response: transcript,
-                    // If you wish, you can also pass the total paused time:
-                    // pausedTime: pauseTimeRef.current
-                }
-            );
+            const res = await axios.post("http://localhost:5000/api/punctuate/feedback", {
+                response: combinedTranscript,
+                // pausedTime: pauseTimeRef.current,
+            });
 
             console.log("Feedback response:", res.data);
-            setFeedback(res.data.feedback);
+            setFeedback(res.data.feedback.pronunciationFeedback);
         } catch (error) {
             console.error('Error sending transcript for feedback:', error);
         }
     };
+
+    // This is how we display both final + interim in the UI
+    // finalTranscript is mostly your "confirmed" text with punctuation
+    // interimTranscript is what's still "in progress"
+    const displayTranscript = `${finalTranscript} ${interimTranscript}`.trim();
 
     return (
         <div style={{ marginTop: '1rem' }}>
@@ -125,19 +139,28 @@ const SpeechPractice = () => {
                 {isRecording ? 'Stop Recording' : 'Start Recording'}
             </button>
 
-            <div style={{ marginTop: '1rem', fontStyle: 'italic', border: '1px solid #ccc', padding: '1rem' }}>
+            <div
+                style={{
+                    marginTop: '1rem',
+                    fontStyle: 'italic',
+                    border: '1px solid #ccc',
+                    padding: '1rem'
+                }}
+            >
                 <strong>Transcript:</strong>
-                <p>{transcript}</p>
+                <p>{displayTranscript}</p>
             </div>
 
-            <button onClick={handleSendFeedbackRequest} disabled={!transcript}>
+            <button onClick={handleSendFeedbackRequest} disabled={!displayTranscript}>
                 Get Pronunciation Feedback
             </button>
 
             {feedback && (
                 <div style={{ marginTop: '1rem' }}>
                     <h3>Feedback</h3>
-                    <pre>{JSON.stringify(feedback, null, 2)}</pre>
+                    <div style={{ whiteSpace: 'pre-line' }}>
+                        {feedback}
+                    </div>
                 </div>
             )}
         </div>
