@@ -1,0 +1,22 @@
+/* App Heading Styling */
+.app-heading {
+    font-family: 'Arial', sans-serif;
+    font-size: 2.5rem;
+    /* Adjust for size */
+    font-weight: bold;
+    color: #007bff;
+    /* Primary color */
+    text-align: center;
+    /* Center align the heading */
+    margin-bottom: 20px;
+    /* Add spacing below the heading */
+    text-transform: uppercase;
+    /* Make all letters uppercase */
+    letter-spacing: 2px;
+    /* Add spacing between letters */
+    background: linear-gradient(90deg, #007bff, #0056b3);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    /* Gradient text */
+    padding: 10px;
+}

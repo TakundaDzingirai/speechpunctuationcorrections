@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import "./styles.css"
 
 const SpeechPractice = () => {
     const [isRecording, setIsRecording] = useState(false);
@@ -9,6 +10,9 @@ const SpeechPractice = () => {
     const [interimTranscript, setInterimTranscript] = useState('');
 
     const [feedback, setFeedback] = useState(null);
+
+    // NEW: loading state
+    const [isLoading, setIsLoading] = useState(false);
 
     // SpeechRecognition instance
     const recognitionRef = useRef(null);
@@ -26,15 +30,14 @@ const SpeechPractice = () => {
             return;
         }
 
-        // Create the recognition instance:
+        // Create the recognition instance
         const recognition = new SpeechRecognition();
         recognition.continuous = true;
         recognition.interimResults = true;
         recognition.lang = 'en-US';
 
-        // On speech result:
+        // On speech result
         recognition.onresult = (event) => {
-            // We'll collect any interim text separately
             let tempInterim = '';
 
             // Process *all* results that have come in since last time
@@ -67,8 +70,8 @@ const SpeechPractice = () => {
             // Update the interim transcript state so user sees partial text
             setInterimTranscript(tempInterim);
 
-            // Handle punctuation on a timeout if user goes silent for 1.5s
-            // This is optional: you might only do punctuation on final results
+            // Optional punctuation on timeout if user goes silent for 1.5s
+            clearTimeout(timeoutRef.current);
             timeoutRef.current = setTimeout(() => {
                 const now = new Date();
                 const timeDiff = (now - lastWordTimeRef.current) / 1000;
@@ -116,6 +119,9 @@ const SpeechPractice = () => {
         if (!combinedTranscript) return;
 
         try {
+            // Show loading indicator
+            setIsLoading(true);
+
             const res = await axios.post("http://localhost:5000/api/punctuate/feedback", {
                 response: combinedTranscript,
                 // pausedTime: pauseTimeRef.current,
@@ -125,45 +131,61 @@ const SpeechPractice = () => {
             setFeedback(res.data.feedback.pronunciationFeedback);
         } catch (error) {
             console.error('Error sending transcript for feedback:', error);
+            setFeedback('Error retrieving feedback. Please try again.');
+        } finally {
+            // Hide loading indicator
+            setIsLoading(false);
         }
     };
 
-    // This is how we display both final + interim in the UI
-    // finalTranscript is mostly your "confirmed" text with punctuation
+    // finalTranscript is "confirmed" text with punctuation
     // interimTranscript is what's still "in progress"
     const displayTranscript = `${finalTranscript} ${interimTranscript}`.trim();
 
     return (
-        <div style={{ marginTop: '1rem' }}>
-            <button onClick={isRecording ? handleStop : handleStart}>
-                {isRecording ? 'Stop Recording' : 'Start Recording'}
-            </button>
-
-            <div
-                style={{
-                    marginTop: '1rem',
-                    fontStyle: 'italic',
-                    border: '1px solid #ccc',
-                    padding: '1rem'
-                }}
-            >
-                <strong>Transcript:</strong>
-                <p>{displayTranscript}</p>
+        <>
+            <div className="app-heading">
+                Correct Punctuation Speech APP
             </div>
 
-            <button onClick={handleSendFeedbackRequest} disabled={!displayTranscript}>
-                Get Pronunciation Feedback
-            </button>
+            <div style={{ marginTop: '1rem' }}>
+                <button onClick={isRecording ? handleStop : handleStart}>
+                    {isRecording ? 'Stop Recording' : 'Start Recording'}
+                </button>
 
-            {feedback && (
-                <div style={{ marginTop: '1rem' }}>
-                    <h3>Feedback</h3>
-                    <div style={{ whiteSpace: 'pre-line' }}>
-                        {feedback}
-                    </div>
+                <div
+                    style={{
+                        marginTop: '1rem',
+                        fontStyle: 'italic',
+                        border: '1px solid #ccc',
+                        padding: '1rem'
+                    }}
+                >
+                    <strong>Transcript:</strong>
+                    <p>{displayTranscript}</p>
                 </div>
-            )}
-        </div>
+
+                {/* Show loading status if request is in-progress */}
+                {isLoading && (
+                    <div style={{ color: 'blue', marginTop: '1rem' }}>
+                        Processing your request...
+                    </div>
+                )}
+
+                <button onClick={handleSendFeedbackRequest} disabled={!displayTranscript || isLoading}>
+                    Get Pronunciation Feedback
+                </button>
+
+                {feedback && (
+                    <div style={{ marginTop: '1rem' }}>
+                        <h3>Feedback</h3>
+                        <div style={{ whiteSpace: 'pre-line' }}>
+                            {feedback}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </>
     );
 };
 
