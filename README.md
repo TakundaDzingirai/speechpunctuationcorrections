@@ -10,7 +10,7 @@ Feel free to adapt wording and structure to best fit your project.
 
 ---
 
-# Speech-to-Text & Pronunciation Feedback
+# Speech-to-Text & Pronunciation Feedbacks
 
 This repository contains a **Speech-to-Text and Pronunciation Feedback** application, where users can:
 
